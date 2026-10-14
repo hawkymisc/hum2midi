@@ -13,17 +13,20 @@ select,input[type=number]{font-size:1rem;padding:6px;border-radius:8px;border:1p
 input[type=number]{width:5.2em}
 button{font-size:1rem;padding:10px 14px;border-radius:10px;border:0;background:#eee;color:var(--fg);margin:4px 6px 4px 0}
 button.pri{background:var(--acc);color:#fff}button:disabled{opacity:.4}
-#rec{display:block;width:100%;font-size:1.4rem;padding:22px;border-radius:18px;background:var(--acc);color:#fff;font-weight:700}
-#rec.on{background:#333;animation:pulse 1s infinite}@keyframes pulse{50%{opacity:.75}}
+.tabs{display:flex;gap:6px;margin:6px 0}.tab{flex:1;font-weight:700}.tab.on{background:var(--acc);color:#fff}button.on{background:#333;color:#fff}
+#rec,#dRec{display:block;width:100%;font-size:1.4rem;padding:22px;border-radius:18px;background:var(--acc);color:#fff;font-weight:700}
+#rec.on,#dRec.on{background:#333;animation:pulse 1s infinite}@keyframes pulse{50%{opacity:.75}}
 #live{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px}
 #liveNote{font-size:3rem;font-weight:800;min-width:3.5em}#liveHz{color:var(--sub)}
-#meter{height:8px;background:#eee;border-radius:4px;overflow:hidden;margin-top:6px}#meter div{height:100%;width:0;background:var(--acc)}
+#meter,.meter{height:8px;background:#eee;border-radius:4px;overflow:hidden;margin-top:6px}#meter div,.meter div{height:100%;width:0;background:var(--acc)}
 #tuner{height:8px;position:relative;background:linear-gradient(90deg,#fdd,#dfd 45%,#dfd 55%,#fdd);border-radius:4px;margin-top:6px}#tuner i{position:absolute;top:-4px;width:4px;height:16px;background:#333;left:50%}
 canvas{width:100%;background:#fcfcfc;border:1px solid #eee;border-radius:10px;touch-action:none;user-select:none;-webkit-user-select:none;display:block}
 .warn{color:#b35c00;font-size:.85rem}.sub{color:var(--sub);font-size:.85rem}
 #notes{font-family:ui-monospace,monospace;font-size:.85rem;white-space:pre-wrap;max-height:12em;overflow:auto;background:#faf7f8;padding:8px;border-radius:8px}
 </style></head><body><main>
 <h1>🎤 鼻歌 → MIDI</h1>
+<nav class="tabs"><button class="tab on" data-t="mel">🎵 メロディ・ベース</button><button class="tab" data-t="drum">🥁 ボイパ→ドラム</button></nav>
+<div id="tabMel">
 <p class="sub">マイクに向かって鼻歌を歌うと、メロディを MIDI に変換します。音声はこの端末の中だけで処理され、どこにも送信されません。</p>
 
 <section><h2>① キーを決めて音を確認</h2>
@@ -48,7 +51,11 @@ canvas{width:100%;background:#fcfcfc;border:1px solid #eee;border-radius:10px;to
 <label>キー補正 <select id="snap"><option value="">しない</option><option value="sel" selected>①で選んだキー</option><option value="auto">自動判定</option></select></label>
 <label>最短の音 <input id="minLen" type="number" value="80" min="20" max="500" step="10"> ms</label>
 <label>移調 <input id="tr" type="number" value="0" min="-24" max="24"> 半音</label>
-<label>音色 <select id="prog"><option value="0">ピアノ</option><option value="80">シンセリード</option><option value="73">フルート</option><option value="54">ボイス</option></select></label>
+<label>音色 <select id="prog"><optgroup label="メロディ"><option value="0">ピアノ</option><option value="80">シンセリード</option><option value="73">フルート</option><option value="54">ボイス</option></optgroup>
+<optgroup label="ベース"><option value="33">フィンガーベース (33)</option><option value="34">ピックベース (34)</option><option value="35">フレットレス (35)</option><option value="38">シンセベース1 (38)</option><option value="39">シンセベース2 (39)</option></optgroup></select></label>
+<label>オクターブ <select id="oct"><option value="1">+1</option><option value="0" selected>0</option><option value="-1">-1</option><option value="-2">-2</option></select></label>
+<button id="bassPreset">🎸 ベースラインにする</button>
+<p class="sub" id="bassHint" hidden>ベースは実際より高く歌いがちなので、歌った高さから 1〜2 オクターブ下げて出力します（ピアノロールにも反映）。</p>
 <p id="summary" class="sub">まだ録音がありません</p>
 <p class="sub">✏️ 編集: 音符をドラッグ＝音の高さ（上下）と位置（左右）／右端・左端をドラッグ＝長さ／タップで選択して「削除」／空いている所をダブルタップか長押し＝音符を追加。位置と長さはクオンタイズのグリッドに合わせます。</p>
 <label><input type="checkbox" id="dragScale" checked> ドラッグ時にキーのスケールの音に合わせる</label>
@@ -56,6 +63,34 @@ canvas{width:100%;background:#fcfcfc;border:1px solid #eee;border-radius:10px;to
 <div><button id="play" disabled>▶ 再生</button><button id="playOrig" disabled>▶ 録音を再生</button><button id="del" disabled>🗑 削除</button><button id="undo" disabled>↶ 元に戻す</button><button id="dl" class="pri" disabled>⬇ MIDIをダウンロード</button></div>
 <div id="notes"></div>
 </section>
+</div>
+<div id="tabDrum" hidden>
+<section><h2>① 自分の声で校正（任意）</h2>
+<p class="sub">各ボタンを押して、その音を 3〜5 回ゆっくり鳴らしてから止めます（例: キック「ブッ」、スネア「パッ／カッ」、ハイハット「ツッ」、オープンハイハット「ツー」）。キック・スネア・ハイハットをそれぞれ 2 回以上登録すると、あなたの声に合わせて判定します。登録しなければ標準のルールで判定します。</p>
+<button id="calKick">キックを登録</button><button id="calSnare">スネアを登録</button><button id="calHat">ハイハットを登録</button><button id="calOpen">オープンHHを登録</button><button id="calReset">リセット</button><br>
+<label><input type="checkbox" id="useCal" checked> 校正を使う</label> <span id="calInfo" class="sub"></span>
+</section>
+<section><h2>② ボイパする</h2>
+<label>BPM <input id="dBpm" type="number" value="100" min="50" max="200"></label><label><input type="checkbox" id="dAuto"> 自動検出</label>
+<label><input type="checkbox" id="dCount" checked> カウントイン（4拍）</label><label><input type="checkbox" id="dMetro"> 録音中もメトロノーム</label>
+<div class="warn" id="dMetroWarn" hidden>⚠ スピーカーのクリック音がマイクに入ると打音として検出されます。<b>イヤホンを使ってください</b>。</div>
+<button id="dRec" class="big">● 録音スタート</button>
+<div class="meter"><div id="dLvl"></div></div>
+<p class="sub">カウントインありの場合は、4 拍のクリックのあと 1 小節目の頭から始めてください（グリッドがそこに合います）。なしの場合は、最初の音が 1 拍目になります。</p>
+</section>
+<section><h2>③ パターン</h2>
+<label>分解能 <select id="dRes"><option value="4" selected>16分</option><option value="2">8分</option></select></label>
+<label>小節数 <select id="dBars"><option value="0">自動</option><option>1</option><option>2</option><option>4</option><option>8</option></select></label>
+<p id="dSummary" class="sub">まだ録音がありません</p>
+<p class="sub">✏️ マスをタップすると音を置く／消す。横にスクロールできます。</p>
+<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><canvas id="dGrid" style="touch-action:pan-x pan-y;border:0;width:auto"></canvas></div>
+<div><button id="dPlay" disabled>▶ 再生</button><label><input type="checkbox" id="dLoop" checked> ループ</label><button id="dPlayOrig" disabled>▶ 録音を再生</button>
+<button id="dUndo" disabled>↶ 元に戻す</button><button id="dClear">全部消す</button><button id="dAddBar">＋1小節</button></div>
+<div><label>MIDI の繰り返し <select id="dRep"><option>1</option><option>2</option><option>4</option><option>8</option></select> 回</label>
+<button id="dDl" class="pri" disabled>⬇ MIDIをダウンロード</button></div>
+<p class="sub">MIDI は 10ch（ドラム）、GM ドラムの番号（キック 36・スネア 38・クローズHH 42・オープンHH 46）で書き出します。</p>
+</section>
+</div>
 <p class="sub">ヒント: iPhone では Safari、Android では Chrome がおすすめです。マイクの許可を求められたら「許可」を選んでください（https か localhost で開いたときだけ使えます）。</p>
 </main>
 <script>// hum2midi core (ブラウザ / Node 共通・依存なし)
@@ -66,7 +101,7 @@ const hz2midi = f => 69 + 12 * Math.log2(f / 440);
 
 // YIN ピッチ推定。buf: Float32Array 1フレーム
 function yin(buf, sr, opt = {}) {
-  const fmin = opt.fmin || 70, fmax = opt.fmax || 1000, th = opt.threshold || 0.15;
+  const fmin = opt.fmin || 55, fmax = opt.fmax || 1000, th = opt.threshold || 0.15;
   const tauMin = Math.floor(sr / fmax), tauMax = Math.min(Math.floor(sr / fmin), buf.length >> 1);
   const W = buf.length - tauMax, d = new Float32Array(tauMax + 1);
   for (let tau = 1; tau <= tauMax; tau++) {
@@ -230,6 +265,119 @@ const api = { SCALES, yin, analyze, segment, detectBPM, quantize, detectKey, key
 if (typeof module !== "undefined") module.exports = api; else G.Hum = api;
 })(typeof window !== "undefined" ? window : globalThis);
 </script>
+<script>// ---- ボイパ → ドラム（依存なし。core.js の後ろに連結して使う）
+(function (G) {
+const H = G.Hum || (typeof module !== "undefined" && require("./core.js"));
+const CLASSES = ["kick", "snare", "hat", "openhat"], GM = { kick: 36, snare: 38, hat: 42, openhat: 46 };
+function fft(re, im) { // in-place radix-2
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let b = n >> 1; for (; j & b; b >>= 1) j ^= b; j ^= b; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const a = -2 * Math.PI / len, wr = Math.cos(a), wi = Math.sin(a);
+    for (let i = 0; i < n; i += len) { let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) { const p = i + k, q = p + len / 2, tr = re[q] * cr - im[q] * ci, ti = re[q] * ci + im[q] * cr;
+        re[q] = re[p] - tr; im[q] = im[p] - ti; re[p] += tr; im[p] += ti; const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t; } }
+  }
+}
+function spectrum(x, off, N) {
+  const re = new Float64Array(N), im = new Float64Array(N);
+  for (let i = 0; i < N; i++) { const v = x[off + i] || 0; re[i] = v * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1))); }
+  fft(re, im); const m = new Float64Array(N / 2); for (let i = 0; i < N / 2; i++) m[i] = re[i] * re[i] + im[i] * im[i]; return m;
+}
+// 打音の検出: スペクトルフラックス + エネルギー
+function onsets(x, sr, o = {}) {
+  const N = 1024, hop = Math.round(sr * 0.005), flux = [], en = []; let prev = null;
+  for (let off = 0; off + N < x.length; off += hop) {
+    const m = spectrum(x, off, N); let f = 0, e = 0;
+    for (let i = 1; i < m.length; i++) { const v = Math.sqrt(m[i]); e += m[i]; if (prev) f += Math.max(0, v - prev[i]); prev ? (prev[i] = v) : 0; }
+    if (!prev) prev = m.map(Math.sqrt);
+    flux.push(f); en.push(Math.sqrt(e / N));
+  }
+  const peakE = Math.max(1e-9, ...en), gate = (o.gate ?? 0.06) * peakE, minGap = Math.round((o.minGapSec ?? 0.07) * sr / hop), out = [];
+  const W = 20;
+  for (let i = 1; i < flux.length - 1; i++) {
+    const lo = Math.max(0, i - W), seg = flux.slice(lo, i + W); const mean = seg.reduce((a, b) => a + b, 0) / seg.length;
+    const peak = flux[i] >= flux[i - 1] && flux[i] > flux[i + 1] && flux[i] > 1.8 * mean + 1e-9;
+    const loud = Math.max(...en.slice(i, i + 6)) > gate;
+    if (peak && loud && (!out.length || i - out[out.length - 1] >= minGap)) out.push(i);
+  }
+  // フラックスの立ち上がりより少し前（フレーム開始）を打点にする
+  return out.map(i => Math.max(0, i * hop + N / 2 - hop * 2) / sr);
+}
+// 1打の特徴量
+function features(x, sr, t) {
+  let i0 = Math.round(t * sr), pk = 0;   // 打点を「立ち上がり後の最大振幅」まで進める
+  for (let i = i0, a = 0; i < i0 + Math.round(0.025 * sr) && i < x.length; i++) if (Math.abs(x[i]) > a) { a = Math.abs(x[i]); pk = i; }
+  i0 = Math.max(0, pk - Math.round(0.002 * sr));
+  // 直前の音の残り（キックの余韻など）を引き算して、その打音だけのスペクトルにする
+  const N = 1024, m = spectrum(x, i0, N), pre = spectrum(x, Math.max(0, i0 - N - Math.round(0.003 * sr)), N), df = sr / N;
+  for (let i = 0; i < m.length; i++) m[i] = Math.max(0, m[i] - 1.5 * pre[i]);
+  let tot = 0, c = 0, low = 0, high = 0, mid = 0;
+  for (let i = 1; i < m.length; i++) { const f = i * df; tot += m[i]; c += f * m[i]; if (f < 250) low += m[i]; else if (f > 5000) high += m[i]; else if (f > 300 && f < 2500) mid += m[i]; }
+  tot = tot || 1e-12;
+  // 減衰は高域（1次差分）で測る → 前のキックの低い余韻に影響されない
+  const seg = (a, b) => { let s = 0, n = 0; for (let i = i0 + Math.round(a * sr); i < i0 + Math.round(b * sr) && i < x.length; i++) { const v = x[i] - (x[i - 1] || 0); s += v * v; n++; } return Math.sqrt(s / Math.max(1, n)); };
+  let z = 0; const zn = Math.round(0.03 * sr); for (let i = i0 + 1; i < i0 + zn && i < x.length; i++) if ((x[i] >= 0) !== (x[i - 1] >= 0)) z++;
+  const e1 = seg(0, 0.03), e2 = seg(0.03, 0.06);  // 次の打音（16分で最短 ~80ms）に掛からない短い窓で減衰を見る
+  return { centroid: c / tot, low: low / tot, high: high / tot, mid: mid / tot, zcr: z / (zn / sr), decay: e2 / (e1 || 1e-9) };
+}
+// 校正なしの判定ルール
+function classifyRule(f) {
+  if (f.low > 0.3 && f.centroid < 1500) return "kick";
+  if (f.centroid > 4500 || f.high > 0.45) return f.decay > 0.7 ? "openhat" : "hat";
+  return "snare";
+}
+// 校正: クラスごとの平均（重心）と標準化
+const vec = f => [Math.log(f.centroid + 1), f.low, f.high, f.mid, Math.log(f.zcr + 1), Math.min(2, f.decay)];
+function calibrate(samples) { // samples: {kick:[feat..], snare:[...], ...}
+  const all = Object.values(samples).flat().map(vec); if (!all.length) return null;
+  const D = all[0].length, mu = new Array(D).fill(0), sd = new Array(D).fill(0);
+  all.forEach(v => v.forEach((x, i) => mu[i] += x / all.length)); all.forEach(v => v.forEach((x, i) => sd[i] += (x - mu[i]) ** 2 / all.length));
+  sd.forEach((v, i) => sd[i] = Math.sqrt(v) || 1);
+  const cent = {}; for (const [k, fs] of Object.entries(samples)) if (fs.length) { const c = new Array(D).fill(0); fs.map(vec).forEach(v => v.forEach((x, i) => c[i] += (x - mu[i]) / sd[i] / fs.length)); cent[k] = c; }
+  return { mu, sd, cent };
+}
+function classifyNN(f, model) {
+  const v = vec(f).map((x, i) => (x - model.mu[i]) / model.sd[i]); let best = null, bd = Infinity;
+  for (const [k, c] of Object.entries(model.cent)) { const d = c.reduce((a, ci, i) => a + (ci - v[i]) ** 2, 0); if (d < bd) { bd = d; best = k; } }
+  return best;
+}
+function analyzeHits(x, sr, o = {}) {
+  return onsets(x, sr, o).map(t => { const f = features(x, sr, t); return { t, f, cls: o.model ? classifyNN(f, o.model) : classifyRule(f) }; });
+}
+// グリッドへ: 先頭の打音を 1 拍目に。steps[row][i] = true/false
+function toGrid(hits, bpm, o = {}) {
+  const spb = o.stepsPerBeat || 4, st = 60 / bpm / spb, t0 = hits.length ? hits[0].t : 0;
+  const idx = hits.map(h => Math.round((h.t - t0) / st));
+  let bars = o.bars || Math.max(1, Math.ceil((Math.max(0, ...idx) + 1) / (spb * 4)));
+  const n = bars * spb * 4, grid = Object.fromEntries(CLASSES.map(c => [c, new Array(n).fill(false)]));
+  hits.forEach((h, k) => { if (idx[k] < n) grid[h.cls][idx[k]] = true; });
+  return { grid, steps: n, stepsPerBeat: spb, bars };
+}
+function writeDrumMidi(g, bpm, o = {}) {
+  const tpq = 480, stT = tpq / g.stepsPerBeat, ev = [], rep = o.repeat || 1;
+  for (let r = 0; r < rep; r++) for (const c of CLASSES) g.grid[c].forEach((on, i) => { if (on) { const t = Math.round((r * g.steps + i) * stT); ev.push([t, 0x99, GM[c], c === "hat" ? 80 : 110], [t + tpq / 8, 0x89, GM[c], 0]); } });
+  ev.sort((a, b) => a[0] - b[0] || (a[1] === 0x89 ? -1 : 1));
+  const d = [], vlq = v => { const b = [v & 127]; while ((v >>= 7)) b.unshift((v & 127) | 128); d.push(...b); }, us = Math.round(60e6 / bpm);
+  vlq(0); d.push(0xff, 0x51, 3, us >> 16 & 255, us >> 8 & 255, us & 255); vlq(0); d.push(0xff, 0x58, 4, 4, 2, 24, 8);
+  let last = 0; for (const [t, s, p, v] of ev) { vlq(t - last); last = t; d.push(s, p, v); }
+  const end = Math.round(rep * g.steps * stT); vlq(Math.max(0, end - last)); d.push(0xff, 0x2f, 0);
+  const u32 = v => [v >>> 24, v >> 16 & 255, v >> 8 & 255, v & 255];
+  return new Uint8Array([0x4d,0x54,0x68,0x64, ...u32(6), 0,0, 0,1, tpq >> 8, tpq & 255, 0x4d,0x54,0x72,0x6b, ...u32(d.length), ...d]);
+}
+const api = { CLASSES, GM, onsets, features, classifyRule, calibrate, classifyNN, analyzeHits, toGrid, writeDrumMidi,
+  detectBPM };
+// テンポ推定: 16分のグリッドに乗る BPM のうち、いちばん遅いもの（倍テン回避）を 70〜160 から選ぶ
+function detectBPM(hits) {
+  if (hits.length < 4) return 100;
+  const on = hits.map(h => h.t - hits[0].t), sc = [];
+  for (let bpm = 70; bpm <= 160; bpm += 0.5) { const g = 60 / bpm / 4; let e = 0; for (const t of on) { const r = t / g; e += Math.abs(r - Math.round(r)); } sc.push([bpm, e / on.length]); }
+  const best = Math.min(...sc.map(v => v[1]));
+  return Math.round(sc.find(v => v[1] <= best + 0.04)[0]);
+}
+if (typeof module !== "undefined") module.exports = api; else G.Drums = api;
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
 <script>
 const $ = id => document.getElementById(id), H = window.Hum;
 const ROOTS = ["C","C#/D♭","D","D#/E♭","E","F","F#/G♭","G","G#/A♭","A","A#/B♭","B"];
@@ -240,12 +388,22 @@ const mtof = m => 440 * 2 ** ((m - 69) / 12);
 
 // ---- 音を鳴らす（簡易シンセ）
 function tone(m, t, dur, gain = 0.25, type = "triangle") {
+  if (type === "bass") return bassTone(m, t, dur, gain);
   const c = ac(), o = c.createOscillator(), g = c.createGain();
   o.type = type; o.frequency.value = mtof(m);
   g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.015); g.gain.setTargetAtTime(gain * 0.6, t + 0.05, 0.2);
   g.gain.setTargetAtTime(0, t + dur * 0.95, 0.03);
   o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.3); return o;
 }
+function bassTone(m, t, dur, gain) {  // ノコギリ波 + ローパス + サイン波のサブで、指弾きベースっぽく
+  const c = ac(), o = c.createOscillator(), s = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+  o.type = "sawtooth"; s.type = "sine"; o.frequency.value = s.frequency.value = mtof(m);
+  f.type = "lowpass"; f.Q.value = 2; f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(380, t + 0.18);
+  const G = gain * 1.6; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(G, t + 0.008); g.gain.setTargetAtTime(G * 0.45, t + 0.03, 0.25); g.gain.setTargetAtTime(0, t + dur * 0.92, 0.025);
+  o.connect(f); s.connect(f); f.connect(g).connect(c.destination); o.start(t); s.start(t); o.stop(t + dur + 0.3); s.stop(t + dur + 0.3);
+  return { stop() { try { o.stop(); s.stop(); } catch {} } };
+}
+const progType = () => { const p = +$("prog").value; return p >= 32 && p <= 39 ? "bass" : { 0: "triangle", 80: "sawtooth", 73: "sine", 54: "sine" }[p] || "triangle"; };
 const scaleOf = () => H.SCALES[$("mode").value];
 const tonicMidi = () => 60 + (+$("root").value > 7 ? +$("root").value - 12 : +$("root").value); // C4 付近
 let stopList = [];
@@ -317,7 +475,7 @@ function stopRec() {
 function opts() {
   const s = $("snap").value;
   return { frames, bpm: $("autoBpm").checked ? 0 : +$("bpm").value, quantize: +$("q").value, minNoteSec: +$("minLen").value / 1000,
-           transpose: +$("tr").value, key: s === "sel" ? ROOTS[$("root").value].split("/")[0] : s === "auto" ? "auto" : "", mode: $("mode").value };
+           transpose: +$("tr").value + 12 * +$("oct").value, key: s === "sel" ? ROOTS[$("root").value].split("/")[0] : s === "auto" ? "auto" : "", mode: $("mode").value };
 }
 // ---- 解析（手動編集があるときは確認してから）
 let edited = false, undoStack = [], sel = -1, geo = null, drag = null;
@@ -456,7 +614,7 @@ addEventListener("resize", () => drawRoll());
 
 $("play").onclick = () => {
   stopAll(); const c = ac(); c.resume(); const t0 = c.currentTime + 0.05;
-  const type = { 0: "triangle", 80: "sawtooth", 73: "sine", 54: "sine" }[$("prog").value];
+  const type = progType();
   for (const n of result.notes) stopList.push(tone(n.pitch, t0 + n.start, n.end - n.start, 0.22, type));
   const end = Math.max(...result.notes.map(n => n.end));
   const anim = () => { const t = c.currentTime - t0; drawRoll(t); if (t < end + 0.2 && stopList.length) requestAnimationFrame(anim); else drawRoll(); };
@@ -471,6 +629,165 @@ $("dl").onclick = () => {
   const a = document.createElement("a"), d = new Date(), z = v => String(v).padStart(2, "0");
   a.href = URL.createObjectURL(new Blob([bytes], { type: "audio/midi" }));
   a.download = `hum_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.mid`;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+// ---- ベース
+let prevOct = 0;
+$("oct").onchange = () => {   // 解析し直さずに、今の音符（編集を含む）をオクターブ移動
+  const d = (+$("oct").value - prevOct) * 12; prevOct = +$("oct").value; $("bassHint").hidden = +$("oct").value >= 0;
+  if (result) { if (edited) pushUndo(); result.notes.forEach(n => n.pitch += d); refresh(); }
+};
+$("bassPreset").onclick = () => {
+  $("prog").value = "33"; if (+$("oct").value >= 0) { $("oct").value = "-1"; $("oct").onchange(); }
+  $("q").value === "0" && ($("q").value = "16");
+};
+$("prog").onchange = () => { $("bassHint").hidden = +$("oct").value >= 0; };
+// ================= タブ =================
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === b));
+  $("tabMel").hidden = b.dataset.t !== "mel"; $("tabDrum").hidden = b.dataset.t !== "drum"; stopAll(); dStop();
+  if (b.dataset.t === "drum") dDraw();
+});
+
+// ================= ボイパ → ドラム =================
+const DR = window.Drums, ROWS = ["openhat", "hat", "snare", "kick"], ROWJ = { kick: "キック", snare: "スネア", hat: "ハイハット", openhat: "オープンHH" };
+let dSamples = null, dSr = 48000, dHits = null, dPat = null, dEdited = false, dUndo = [], dRecT0 = null, cal = { kick: [], snare: [], hat: [], openhat: [] };
+
+// 録音の共通部品
+async function startRecorder(onLevel, echo) {
+  const c = ac(); await c.resume();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: !!echo, noiseSuppression: false, autoGainControl: false } });
+  const src = c.createMediaStreamSource(stream), proc = c.createScriptProcessor(2048, 1, 1), mute = c.createGain(); mute.gain.value = 0;
+  const chunks = []; proc.onaudioprocess = e => { const d = e.inputBuffer.getChannelData(0); chunks.push(new Float32Array(d)); if (onLevel) { let s = 0; for (const x of d) s += x * x; onLevel(Math.sqrt(s / d.length)); } };
+  src.connect(proc); proc.connect(mute).connect(c.destination);
+  return { sr: c.sampleRate, startTime: c.currentTime, stop() {
+    proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop());
+    const n = chunks.reduce((a, b) => a + b.length, 0), x = new Float32Array(n); let o = 0; for (const b of chunks) { x.set(b, o); o += b.length; } return x; } };
+}
+// 合成ドラム
+let noiseBuf = null;
+function noise() { const c = ac(); if (!noiseBuf) { noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } const s = c.createBufferSource(); s.buffer = noiseBuf; return s; }
+function drum(kind, t, vol = 1) {
+  const c = ac(), g = c.createGain(); g.connect(c.destination); const nodes = [];
+  if (kind === "kick") { const o = c.createOscillator(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12); g.gain.setValueAtTime(0.9 * vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35); o.connect(g); o.start(t); o.stop(t + 0.4); nodes.push(o); }
+  else if (kind === "snare") { const n = noise(), f = c.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 1200; n.connect(f).connect(g); g.gain.setValueAtTime(0.5 * vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    const o = c.createOscillator(), g2 = c.createGain(); o.frequency.value = 190; g2.gain.setValueAtTime(0.4 * vol, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1); o.connect(g2).connect(c.destination); o.start(t); o.stop(t + 0.12); n.start(t); n.stop(t + 0.2); nodes.push(n, o); }
+  else if (kind === "click") { const o = c.createOscillator(); o.frequency.value = vol > 1 ? 1600 : 1000; g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05); o.connect(g); o.start(t); o.stop(t + 0.06); nodes.push(o); }
+  else { const n = noise(), f = c.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 7000; n.connect(f).connect(g); const len = kind === "openhat" ? 0.3 : 0.05; g.gain.setValueAtTime(0.35 * vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + len); n.start(t); n.stop(t + len + 0.02); nodes.push(n); }
+  return nodes;
+}
+$("dMetro").onchange = () => $("dMetroWarn").hidden = !$("dMetro").checked;
+
+// 校正
+const calBtns = { kick: "calKick", snare: "calSnare", hat: "calHat", openhat: "calOpen" };
+let calRec = null;
+function calText() { $("calInfo").textContent = Object.entries(cal).map(([k, v]) => `${ROWJ[k]} ${v.length}`).join("　") + (useCal() ? "　→ 校正を使って判定します" : "　→ 校正なし（ルールで判定）"); }
+const useCal = () => $("useCal").checked && ["kick", "snare", "hat"].every(k => cal[k].length >= 2);
+Object.entries(calBtns).forEach(([k, id]) => $(id).onclick = async () => {
+  if (calRec) { const { r, k: kk } = calRec; calRec = null; const x = r.stop(); const ts = DR.onsets(x, r.sr); ts.forEach(t => cal[kk].push(DR.features(x, r.sr, t)));
+    $(calBtns[kk]).textContent = `${ROWJ[kk]}を登録`; $(calBtns[kk]).classList.remove("on"); calText(); if (!ts.length) alert("音が検出できませんでした"); dOnSetting(); return; }
+  try { calRec = { r: await startRecorder(), k }; } catch (e) { return alert("マイクが使えません: " + e.message); }
+  $(id).textContent = `■ 止める（${ROWJ[k]}を数回）`; $(id).classList.add("on");
+});
+$("calReset").onclick = () => { for (const k in cal) cal[k] = []; calText(); dOnSetting(); };
+$("useCal").onchange = () => { calText(); dOnSetting(); };
+calText();
+
+// 録音
+let dRec = null;
+$("dRec").onclick = async () => {
+  if (dRec) { const r = dRec; dRec = null; dSamples = r.stop(); dSr = r.sr; $("dRec").textContent = "● もう一度録音"; $("dRec").classList.remove("on"); stopAll();
+    dEdited = false; dUndo = []; dAnalyze(); return; }
+  const c = ac(); await c.resume(); stopAll(); dStop();
+  let r; try { r = await startRecorder(v => $("dLvl").style.width = Math.min(100, v * 300) + "%", $("dMetro").checked); } catch (e) { return alert("マイクが使えません: " + e.message); }
+  dRec = r; $("dRec").textContent = "■ 停止"; $("dRec").classList.add("on");
+  const bpm = +$("dBpm").value, beat = 60 / bpm; dRecT0 = null;
+  if ($("dCount").checked || $("dMetro").checked) {
+    const t0 = c.currentTime + 0.1, n = $("dCount").checked ? 4 : 0;
+    for (let i = 0; i < n; i++) stopList.push(...drum("click", t0 + i * beat, i === 0 ? 2 : 1));
+    if ($("dCount").checked) dRecT0 = t0 + n * beat - r.startTime;   // 1小節目の頭（録音開始からの秒）
+    if ($("dMetro").checked) for (let i = n; i < n + 4 * 32; i++) stopList.push(...drum("click", t0 + i * beat, i % 4 ? 1 : 2));
+  }
+};
+function dOpts() { return { model: useCal() ? DR.calibrate(cal) : null }; }
+function dAnalyze() {
+  if (!dSamples) return;
+  dHits = DR.analyzeHits(dSamples, dSr, dOpts()).filter(h => dRecT0 == null || h.t > dRecT0 - 0.1);
+  if ($("dAuto").checked && dHits.length >= 4) $("dBpm").value = DR.detectBPM(dHits);
+  const bpm = +$("dBpm").value, spb = +$("dRes").value, bars = +$("dBars").value || 0;
+  const hits = dRecT0 != null ? [{ t: dRecT0, cls: "_anchor" }, ...dHits] : dHits;   // カウントインありなら 1拍目に合わせる
+  const g = DR.toGrid(hits.filter(h => h.cls !== "_anchor" || true).map(h => h.cls === "_anchor" ? { ...h, cls: "kick", anchor: 1 } : h), bpm, { stepsPerBeat: spb, bars });
+  if (dRecT0 != null && !dHits.some(h => Math.abs(h.t - dRecT0) < 60 / bpm / spb / 2 && h.cls === "kick")) g.grid.kick[0] = false;
+  dPat = g; dRefresh();
+}
+function dOnSetting() {
+  if (!dSamples) return;
+  if (dEdited && !confirm("手で編集したパターンがあります。設定を変えると録音から解析し直すので、編集は消えます。続けますか？")) return;
+  dEdited = false; dUndo = []; dAnalyze();
+}
+["dBpm", "dAuto", "dRes", "dBars"].forEach(id => $(id).addEventListener("change", dOnSetting));
+function dRefresh() {
+  const n = dHits ? dHits.length : 0, cnt = {}; (dHits || []).forEach(h => cnt[h.cls] = (cnt[h.cls] || 0) + 1);
+  $("dSummary").textContent = dPat ? `${n} 打 検出（${ROWS.map(r => `${ROWJ[r]} ${cnt[r] || 0}`).join("・")}）/ BPM ${$("dBpm").value} / ${dPat.bars} 小節` + (dEdited ? " / ✏️ 手動編集あり" : "") : "まだ録音がありません";
+  ["dPlay", "dDl"].forEach(id => $(id).disabled = !dPat); $("dUndo").disabled = !dUndo.length; $("dPlayOrig").disabled = !dSamples; dDraw();
+}
+// グリッド表示と編集
+const CELL = 26, LBL = 78;
+function dDraw(play = -1) {
+  const cv = $("dGrid"); if (!dPat) { cv.style.height = "0px"; return; }
+  const W = LBL + dPat.steps * CELL + 4, Hh = ROWS.length * 40, dpr = devicePixelRatio || 1;
+  cv.style.width = W + "px"; cv.style.height = Hh + "px"; cv.width = W * dpr; cv.height = Hh * dpr;
+  const g = cv.getContext("2d"); g.scale(dpr, dpr); const spb = dPat.stepsPerBeat;
+  ROWS.forEach((r, ri) => {
+    g.fillStyle = "#3a2a33"; g.font = "13px sans-serif"; g.fillText(ROWJ[r], 4, ri * 40 + 25);
+    for (let i = 0; i < dPat.steps; i++) {
+      const x = LBL + i * CELL, y = ri * 40 + 4, beatN = Math.floor(i / spb);
+      g.fillStyle = i === play ? "#ffe08a" : beatN % 2 ? "#f3eef1" : "#fbf8f9"; g.fillRect(x + 1, y, CELL - 2, 32);
+      if (dPat.grid[r][i]) { g.fillStyle = { kick: "#ff5d8f", snare: "#7b61ff", hat: "#1fa38a", openhat: "#e0a100" }[r]; g.beginPath(); g.roundRect ? g.roundRect(x + 3, y + 3, CELL - 6, 26, 5) : g.rect(x + 3, y + 3, CELL - 6, 26); g.fill(); }
+    }
+  });
+  g.fillStyle = "#998"; g.font = "10px sans-serif";
+  for (let i = 0; i < dPat.steps; i += spb) { g.fillRect(LBL + i * CELL, 0, i % (spb * 4) ? 0.5 : 2, Hh); if (i % (spb * 4) === 0) g.fillText(String(i / spb / 4 + 1), LBL + i * CELL + 3, Hh - 2); }
+}
+(() => { const cv = $("dGrid"); let down = null;
+  cv.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY }; });
+  cv.addEventListener("pointerup", e => {
+    if (!down || !dPat) return; const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8; down = null; if (moved) return;  // スクロールはタップ扱いにしない
+    const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, i = Math.floor((x - LBL) / CELL), ri = Math.floor(y / 40);
+    if (i < 0 || i >= dPat.steps || ri < 0 || ri >= ROWS.length) return;
+    dUndo.push(JSON.stringify(dPat.grid)); const row = ROWS[ri]; dPat.grid[row][i] = !dPat.grid[row][i];
+    if (dPat.grid[row][i]) drum(row, ac().currentTime);
+    dEdited = true; dRefresh();
+  });
+})();
+$("dUndo").onclick = () => { if (!dUndo.length) return; dPat.grid = JSON.parse(dUndo.pop()); dEdited = true; dRefresh(); };
+$("dClear").onclick = () => { if (!dPat) return; dUndo.push(JSON.stringify(dPat.grid)); ROWS.forEach(r => dPat.grid[r].fill(false)); dEdited = true; dRefresh(); };
+$("dAddBar").onclick = () => { if (!dPat) { dPat = DR.toGrid([], +$("dBpm").value, { stepsPerBeat: +$("dRes").value, bars: 1 }); }
+  else { dUndo.push(JSON.stringify(dPat.grid)); const n = dPat.stepsPerBeat * 4; ROWS.forEach(r => dPat.grid[r].push(...new Array(n).fill(false))); dPat.steps += n; dPat.bars++; }
+  dEdited = true; dRefresh(); };
+// 再生（ループ可）
+let dTimer = null;
+function dStop() { if (dTimer) { clearInterval(dTimer); dTimer = null; } stopAll(); $("dPlay").textContent = "▶ 再生"; dDraw(); }
+$("dPlay").onclick = () => {
+  if (dTimer) return dStop();
+  const c = ac(); c.resume(); stopAll(); const st = 60 / +$("dBpm").value / dPat.stepsPerBeat; let next = c.currentTime + 0.08, i = 0;
+  $("dPlay").textContent = "■ 停止";
+  dTimer = setInterval(() => {
+    while (next < c.currentTime + 0.12) {
+      if (i >= dPat.steps) { if (!$("dLoop").checked) { setTimeout(dStop, 300); clearInterval(dTimer); return; } i = 0; }
+      ROWS.forEach(r => { if (dPat.grid[r][i]) stopList.push(...drum(r, next)); });
+      const step = i; setTimeout(() => dTimer && dDraw(step), Math.max(0, (next - c.currentTime) * 1000));
+      next += st; i++;
+    }
+  }, 25);
+};
+$("dPlayOrig").onclick = () => { stopAll(); const c = ac(); c.resume(); const b = c.createBuffer(1, dSamples.length, dSr); b.copyToChannel(dSamples, 0); const s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(); stopList.push(s); };
+$("dDl").onclick = () => {
+  const bytes = DR.writeDrumMidi(dPat, +$("dBpm").value, { repeat: +$("dRep").value });
+  const a = document.createElement("a"), d = new Date(), z = v => String(v).padStart(2, "0");
+  a.href = URL.createObjectURL(new Blob([bytes], { type: "audio/midi" }));
+  a.download = `drums_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.mid`;
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
 </script></body></html>
