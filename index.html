@@ -19,7 +19,7 @@ button.pri{background:var(--acc);color:#fff}button:disabled{opacity:.4}
 #liveNote{font-size:3rem;font-weight:800;min-width:3.5em}#liveHz{color:var(--sub)}
 #meter{height:8px;background:#eee;border-radius:4px;overflow:hidden;margin-top:6px}#meter div{height:100%;width:0;background:var(--acc)}
 #tuner{height:8px;position:relative;background:linear-gradient(90deg,#fdd,#dfd 45%,#dfd 55%,#fdd);border-radius:4px;margin-top:6px}#tuner i{position:absolute;top:-4px;width:4px;height:16px;background:#333;left:50%}
-canvas{width:100%;background:#fcfcfc;border:1px solid #eee;border-radius:10px;touch-action:pan-y}
+canvas{width:100%;background:#fcfcfc;border:1px solid #eee;border-radius:10px;touch-action:none;user-select:none;-webkit-user-select:none;display:block}
 .warn{color:#b35c00;font-size:.85rem}.sub{color:var(--sub);font-size:.85rem}
 #notes{font-family:ui-monospace,monospace;font-size:.85rem;white-space:pre-wrap;max-height:12em;overflow:auto;background:#faf7f8;padding:8px;border-radius:8px}
 </style></head><body><main>
@@ -50,8 +50,10 @@ canvas{width:100%;background:#fcfcfc;border:1px solid #eee;border-radius:10px;to
 <label>移調 <input id="tr" type="number" value="0" min="-24" max="24"> 半音</label>
 <label>音色 <select id="prog"><option value="0">ピアノ</option><option value="80">シンセリード</option><option value="73">フルート</option><option value="54">ボイス</option></select></label>
 <p id="summary" class="sub">まだ録音がありません</p>
-<canvas id="roll" height="260"></canvas>
-<div><button id="play" disabled>▶ 再生</button><button id="playOrig" disabled>▶ 録音を再生</button><button id="dl" class="pri" disabled>⬇ MIDIをダウンロード</button></div>
+<p class="sub">✏️ 編集: 音符をドラッグ＝音の高さ（上下）と位置（左右）／右端・左端をドラッグ＝長さ／タップで選択して「削除」／空いている所をダブルタップか長押し＝音符を追加。位置と長さはクオンタイズのグリッドに合わせます。</p>
+<label><input type="checkbox" id="dragScale" checked> ドラッグ時にキーのスケールの音に合わせる</label>
+<canvas id="roll"></canvas>
+<div><button id="play" disabled>▶ 再生</button><button id="playOrig" disabled>▶ 録音を再生</button><button id="del" disabled>🗑 削除</button><button id="undo" disabled>↶ 元に戻す</button><button id="dl" class="pri" disabled>⬇ MIDIをダウンロード</button></div>
 <div id="notes"></div>
 </section>
 <p class="sub">ヒント: iPhone では Safari、Android では Chrome がおすすめです。マイクの許可を求められたら「許可」を選んでください（https か localhost で開いたときだけ使えます）。</p>
@@ -257,10 +259,10 @@ $("playChord").onclick = () => {
   stopAll(); const c = ac(); c.resume(); const t0 = c.currentTime + 0.05, sc = scaleOf(), tn = tonicMidi();
   [0, sc[2], sc[4], 12].forEach(i => stopList.push(tone(tn + i, t0, 1.8, 0.16)));
 };
-function syncSnap() { $("snap").options[1].text = `①で選んだキー（${ROOTS[$("root").value]} ${$("mode").selectedOptions[0].text}）`; if (result) render(); }
-$("root").onchange = $("mode").onchange = () => { $("snap").value = "sel"; syncSnap(); };
+function syncSnap(noRender) { $("snap").options[1].text = `①で選んだキー（${ROOTS[$("root").value]} ${$("mode").selectedOptions[0].text}）`; if (!noRender && typeof onSetting === "function" && result) onSetting(this?.id || "root"); }
+$("root").onchange = $("mode").onchange = function () { $("snap").value = "sel"; syncSnap.call(this); };
 $("drone").onchange = () => $("droneWarn").hidden = !$("drone").checked;
-syncSnap();
+syncSnap(true);
 
 function startDrone() {
   const c = ac(), m = tonicMidi() - 24;  // 主音の 2 オクターブ下（約 33〜62Hz、ピッチ検出の範囲 70Hz より下）
@@ -308,7 +310,7 @@ function stopRec() {
   const n = chunks.reduce((a, c) => a + c.length, 0); samples = new Float32Array(n);
   let o = 0; for (const c of chunks) { samples.set(c, o); o += c.length; }
   $("summary").textContent = "解析中…";
-  setTimeout(() => { frames = H.analyze(samples, sr); render(); }, 30);
+  setTimeout(() => { frames = H.analyze(samples, sr); edited = false; undoStack = []; sel = -1; render(); }, 30);
 }
 
 // ---- 解析と表示
@@ -317,31 +319,140 @@ function opts() {
   return { frames, bpm: $("autoBpm").checked ? 0 : +$("bpm").value, quantize: +$("q").value, minNoteSec: +$("minLen").value / 1000,
            transpose: +$("tr").value, key: s === "sel" ? ROOTS[$("root").value].split("/")[0] : s === "auto" ? "auto" : "", mode: $("mode").value };
 }
+// ---- 解析（手動編集があるときは確認してから）
+let edited = false, undoStack = [], sel = -1, geo = null, drag = null;
+const CTRLS = ["bpm", "autoBpm", "q", "snap", "minLen", "tr", "root", "mode"];
+const ctrlVal = id => $(id).type === "checkbox" ? $(id).checked : $(id).value;
+let prevVals = Object.fromEntries(CTRLS.map(id => [id, ctrlVal(id)]));
+function onSetting(id) {
+  if (edited && result) {
+    if (!confirm("手で編集した音符があります。設定を変えると録音から解析し直すので、編集は消えます。続けますか？\n（キャンセルすると設定を元に戻し、編集を残します）")) {
+      const el = $(id); if (el.type === "checkbox") el.checked = prevVals[id]; else el.value = prevVals[id];
+      if (id === "root" || id === "mode") { $("snap").value = prevVals.snap; syncSnap(true); }
+      return;
+    }
+  }
+  edited = false; undoStack = []; sel = -1; render();
+  prevVals = Object.fromEntries(CTRLS.map(i => [i, ctrlVal(i)]));
+}
 function render() {
   if (!frames) return;
   result = H.process(samples, sr, opts());
   if ($("autoBpm").checked) $("bpm").value = result.bpm;
+  refresh();
+}
+function refresh() {
   const ns = result.notes;
-  $("summary").textContent = ns.length ? `${ns.length} 音 / BPM ${result.bpm}` + (result.key != null ? ` / キー補正 ${H.NAMES[result.key]}` : "") : "音が検出できませんでした。もう少し大きな声で、はっきり歌ってみてください。";
-  ["play", "playOrig", "dl"].forEach(id => $(id).disabled = !ns.length && id !== "playOrig");
+  $("summary").textContent = ns.length ? `${ns.length} 音 / BPM ${result.bpm}` + (result.key != null ? ` / キー補正 ${H.NAMES[result.key]}` : "") + (edited ? " / ✏️ 手動編集あり" : "") : "音が検出できませんでした。もう少し大きな声で、はっきり歌ってみてください。";
+  ["play", "dl"].forEach(id => $(id).disabled = !ns.length); $("playOrig").disabled = !samples;
+  $("del").disabled = sel < 0; $("undo").disabled = !undoStack.length;
   const beat = 60 / result.bpm;
-  $("notes").textContent = ns.map((n, i) => `${String(i + 1).padStart(3)}  ${H.noteName(n.pitch).padEnd(4)} 拍 ${(n.start / beat + 1).toFixed(2).padStart(6)}  長さ ${((n.end - n.start) / beat).toFixed(2)} 拍`).join("\n");
+  $("notes").textContent = ns.map((n, i) => `${i === sel ? "▶" : " "}${String(i + 1).padStart(3)}  ${H.noteName(n.pitch).padEnd(4)} 拍 ${(n.start / beat + 1).toFixed(2).padStart(6)}  長さ ${((n.end - n.start) / beat).toFixed(2)} 拍`).join("\n");
   drawRoll();
 }
+
+// ---- ピアノロール
+function layout() {
+  const ns = result.notes, cv = $("roll"), W = cv.clientWidth;
+  const ps = ns.length ? ns.map(n => n.pitch) : [60, 72];
+  const lo = Math.min(...ps) - 3, hi = Math.max(...ps) + 3, rows = hi - lo + 1;
+  const rowH = Math.max(16, Math.min(26, 360 / rows)), Hh = rows * rowH;
+  const T = Math.max(4 * 60 / result.bpm, (ns.length ? Math.max(...ns.map(n => n.end)) : 0) + 2 * 60 / result.bpm);
+  const L = 34, x = t => L + (W - L - 6) * t / T, tx = px => (px - L) * T / (W - L - 6), y = p => (hi - p) * rowH, py = v => hi - Math.floor(v / rowH);
+  return { W, Hh, lo, hi, rowH, T, L, x, tx, y, py };
+}
 function drawRoll(playT = -1) {
-  const cv = $("roll"), dpr = devicePixelRatio || 1, W = cv.clientWidth, Hh = 260; cv.width = W * dpr; cv.height = Hh * dpr;
+  const cv = $("roll"); if (!result) return;
+  if (!drag) geo = layout();   // ドラッグ中は目盛りを固定
+  const { W, Hh, lo, hi, rowH, T, L, x, y } = geo, dpr = devicePixelRatio || 1;
+  cv.style.height = Hh + "px"; cv.width = W * dpr; cv.height = Hh * dpr;
   const g = cv.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, W, Hh);
-  const ns = result?.notes || []; if (!ns.length) return;
-  const lo = Math.min(...ns.map(n => n.pitch)) - 2, hi = Math.max(...ns.map(n => n.pitch)) + 2, T = Math.max(...ns.map(n => n.end)) + 0.2;
-  const rowH = Hh / (hi - lo + 1), x = t => 34 + (W - 40) * t / T, y = p => (hi - p) * rowH;
-  for (let p = lo; p <= hi; p++) { g.fillStyle = [1, 3, 6, 8, 10].includes(p % 12) ? "#f1eef0" : "#fff"; g.fillRect(34, y(p), W, rowH); if (p % 12 === 0 || rowH > 11) { g.fillStyle = "#998"; g.font = "10px sans-serif"; g.fillText(H.noteName(p), 2, y(p) + rowH - 2); } }
-  const beat = 60 / result.bpm; g.strokeStyle = "#ddd";
-  for (let b = 0; b * beat < T; b++) { g.lineWidth = b % 4 ? 0.5 : 1.5; g.beginPath(); g.moveTo(x(b * beat), 0); g.lineTo(x(b * beat), Hh); g.stroke(); }
-  g.fillStyle = "#ff5d8f"; for (const n of ns) g.fillRect(x(n.start), y(n.pitch) + 1, Math.max(2, x(n.end) - x(n.start) - 1), rowH - 2);
+  for (let p = lo; p <= hi; p++) { g.fillStyle = [1, 3, 6, 8, 10].includes(((p % 12) + 12) % 12) ? "#f1eef0" : "#fff"; g.fillRect(L, y(p), W, rowH); g.fillStyle = "#998"; g.font = "10px sans-serif"; g.fillText(H.noteName(p), 2, y(p) + rowH - 4); }
+  const beat = 60 / result.bpm, gs = gridSec();
+  if (gs < beat) { g.strokeStyle = "#f0f0f0"; g.lineWidth = 0.5; for (let t = 0; t < T; t += gs) { g.beginPath(); g.moveTo(x(t), 0); g.lineTo(x(t), Hh); g.stroke(); } }
+  g.strokeStyle = "#ccc"; for (let b = 0; b * beat < T; b++) { g.lineWidth = b % 4 ? 0.6 : 1.6; g.beginPath(); g.moveTo(x(b * beat), 0); g.lineTo(x(b * beat), Hh); g.stroke(); }
+  result.notes.forEach((n, i) => {
+    const X = x(n.start), w = Math.max(3, x(n.end) - X - 1);
+    g.fillStyle = i === sel ? "#c2185b" : "#ff5d8f"; g.fillRect(X, y(n.pitch) + 1, w, rowH - 2);
+    if (i === sel) { g.fillStyle = "#fff"; g.fillRect(X + 1, y(n.pitch) + rowH / 2 - 5, 3, 10); g.fillRect(X + w - 4, y(n.pitch) + rowH / 2 - 5, 3, 10); }
+  });
   if (playT >= 0) { g.fillStyle = "#333"; g.fillRect(x(playT), 0, 2, Hh); }
 }
-["bpm", "autoBpm", "q", "snap", "minLen", "tr"].forEach(id => $(id).addEventListener("change", render));
+const gridSec = () => { const q = +$("q").value || 16; return 60 / result.bpm * 4 / q; };
+const snapT = t => { const gs = gridSec(); return Math.max(0, Math.round(t / gs) * gs); };
+function snapP(p) {
+  if (!$("dragScale").checked) return p;
+  const sc = H.SCALES[$("mode").value], tn = result.key ?? +$("root").value, ok = q => sc.includes(((q - tn) % 12 + 12) % 12);
+  for (let d = 0; d < 3; d++) { if (ok(p + d)) return p + d; if (ok(p - d)) return p - d; } return p;
+}
+const pushUndo = () => { undoStack.push(JSON.stringify(result.notes)); if (undoStack.length > 100) undoStack.shift(); };
+function tidy() { // 並べ替えて、重なった前の音を後ろの音の頭で切る
+  const keep = result.notes[sel]; result.notes.sort((a, b) => a.start - b.start);
+  const gs = gridSec();
+  for (let i = 0; i + 1 < result.notes.length; i++) { const a = result.notes[i], b = result.notes[i + 1]; if (a.end > b.start) a.end = Math.max(a.start + Math.min(gs, b.start - a.start || gs), b.start); if (a.end <= a.start) a.end = a.start + gs; }
+  sel = keep ? result.notes.indexOf(keep) : -1;
+}
+function hit(px, py) {
+  const { x, y, rowH } = geo, tol = Math.max(0, (24 - rowH) / 2);   // 指で触りやすいよう上下に余裕
+  for (let i = result.notes.length - 1; i >= 0; i--) {
+    const n = result.notes[i], X0 = x(n.start), X1 = Math.max(X0 + 3, x(n.end)), Y = y(n.pitch);
+    if (py >= Y - tol && py <= Y + rowH + tol && px >= X0 - 8 && px <= X1 + 8) {
+      const edge = Math.min(14, Math.max(8, (X1 - X0) / 3));
+      return { i, part: px > X1 - edge ? "right" : px < X0 + edge && X1 - X0 > 24 ? "left" : "body" };
+    }
+  }
+  return null;
+}
+let lastTap = { t: 0, x: 0, y: 0 }, longT = 0;
+const cv = $("roll");
+const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function addNoteAt(px, py) {
+  pushUndo(); const t = snapT(geo.tx(px)), p = snapP(geo.py(py)), len = $("q").value === "0" ? 60 / result.bpm : gridSec() * Math.max(1, (+$("q").value) / 4);
+  const n = { start: t, end: t + len, pitch: p }; result.notes.push(n); sel = result.notes.length - 1; tidy(); edited = true; tone(p, ac().currentTime, 0.3, 0.2); refresh();
+}
+cv.addEventListener("pointerdown", e => {
+  if (!result) return; e.preventDefault(); ac().resume();
+  const [px, py] = pos(e), h = hit(px, py);
+  if (h) {
+    sel = h.i; const n = result.notes[h.i];
+    drag = { id: e.pointerId, part: h.part, px, py, o: { ...n }, n, moved: false, lastP: n.pitch };
+    cv.setPointerCapture(e.pointerId); tone(n.pitch, ac().currentTime, 0.25, 0.18); refresh(); return;
+  }
+  sel = -1; refresh();
+  const now = performance.now();
+  if (now - lastTap.t < 350 && Math.hypot(px - lastTap.x, py - lastTap.y) < 24) { lastTap.t = 0; return addNoteAt(px, py); }   // ダブルタップで追加
+  lastTap = { t: now, x: px, y: py };
+  clearTimeout(longT); longT = setTimeout(() => addNoteAt(px, py), 550);                                           // 長押しで追加
+  const cancel = () => { clearTimeout(longT); cv.removeEventListener("pointerup", cancel); cv.removeEventListener("pointermove", mv); };
+  const mv = ev => { const [qx, qy] = pos(ev); if (Math.hypot(qx - px, qy - py) > 10) cancel(); };
+  cv.addEventListener("pointerup", cancel); cv.addEventListener("pointermove", mv);
+});
+cv.addEventListener("pointermove", e => {
+  if (!drag || e.pointerId !== drag.id) return; e.preventDefault();
+  const [px, py] = pos(e), dx = geo.tx(px) - geo.tx(drag.px), { n, o } = drag;
+  if (!drag.moved && Math.hypot(px - drag.px, py - drag.py) < 4) return;
+  if (!drag.moved) { pushUndo(); drag.moved = true; }
+  const gs = gridSec();
+  if (drag.part === "body") {
+    const len = o.end - o.start; n.start = snapT(o.start + dx); n.end = n.start + len;
+    n.pitch = snapP(Math.round(o.pitch + (drag.py - py) / geo.rowH));
+    if (n.pitch !== drag.lastP) { drag.lastP = n.pitch; tone(n.pitch, ac().currentTime, 0.2, 0.16); }   // 音程が変わったら試聴
+  } else if (drag.part === "right") n.end = Math.max(n.start + gs, snapT(o.end + dx));
+  else n.start = Math.max(0, Math.min(n.end - gs, snapT(o.start + dx)));
+  edited = true; refresh();
+});
+const endDrag = e => { if (!drag || e.pointerId !== drag.id) return; const moved = drag.moved; drag = null; if (moved) tidy(); refresh(); };
+cv.addEventListener("pointerup", endDrag); cv.addEventListener("pointercancel", endDrag);
+$("del").onclick = () => { if (sel < 0) return; pushUndo(); result.notes.splice(sel, 1); sel = -1; edited = true; refresh(); };
+$("undo").onclick = () => { if (!undoStack.length) return; result.notes = JSON.parse(undoStack.pop()); sel = -1; edited = true; refresh(); };
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if ((e.key === "Delete" || e.key === "Backspace") && sel >= 0) { e.preventDefault(); $("del").click(); }
+  if (e.key === "z" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("undo").click(); }
+});
+CTRLS.filter(id => id !== "root" && id !== "mode").forEach(id => $(id).addEventListener("change", () => onSetting(id)));
 addEventListener("resize", () => drawRoll());
+
 
 $("play").onclick = () => {
   stopAll(); const c = ac(); c.resume(); const t0 = c.currentTime + 0.05;
